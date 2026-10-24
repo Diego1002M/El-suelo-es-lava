@@ -21,3 +21,21 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Other loose folders / packages not part of this project
+/*.zip
+/*.unitypackage
+/*.pdf
+/*_Capture.jpg
+/*Capstone.jpg
+/Challenge*/
+/Prototype*/
+/Tanks*/
+/TankGame/
+/PruebaAR/
+/cohete/
+/naranjoso/
+/semana 9/
+/tanque3D/
+/Junior Programmer/
+/Mijuego/
