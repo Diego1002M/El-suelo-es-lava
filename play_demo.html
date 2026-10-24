@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Floor is Lava - Demo 3D Jugable</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; user-select: none; }
+    #hud {
+      position: absolute; top: 15px; left: 15px; z-index: 10;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(5px);
+      padding: 12px 20px; border-radius: 12px; color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    #hud h1 { margin: 0 0 5px 0; font-size: 18px; color: #ff9800; }
+    .hearts { color: #f44336; font-size: 20px; letter-spacing: 2px; }
+    #msg {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 32px; font-weight: bold; color: white; text-align: center;
+      background: rgba(0,0,0,0.85); padding: 30px 50px; border-radius: 20px;
+      display: none; z-index: 20; border: 3px solid #ff9800;
+    }
+    #controls {
+      position: absolute; bottom: 15px; left: 15px; z-index: 10;
+      color: rgba(255,255,255,0.8); font-size: 13px; background: rgba(0,0,0,0.5);
+      padding: 8px 14px; border-radius: 8px;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div id="hud">
+    <h1>🔥 Floor is Lava: Demo 3D</h1>
+    <div>Vidas: <span class="hearts" id="hearts">❤️❤️❤️</span></div>
+    <div style="margin-top: 4px; font-size: 13px;">Lava Subiendo: <span id="lavaHeight" style="color:#ff5722; font-weight:bold;">0.0m</span></div>
+  </div>
+
+  <div id="controls">
+    [W, A, S, D] Moverse &nbsp;|&nbsp; [ESPACIO] Saltar &nbsp;|&nbsp; ¡Llega al cubo VERDE arriba!
+  </div>
+
+  <div id="msg">
+    <div id="msgText"></div>
+    <button onclick="location.reload()" style="margin-top: 15px; padding: 10px 20px; font-size: 16px; font-weight: bold; background: #ff9800; color: white; border: none; border-radius: 8px; cursor: pointer;">Jugar de Nuevo</button>
+  </div>
+
+  <script>
+    // 1. Escena, Cámara y Renderer
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.FogExp2(0x1a1a2e, 0.03);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // 2. Luces
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfff3e0, 0.8);
+    dirLight.position.set(10, 20, 10);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const lavaLight = new THREE.PointLight(0xff3300, 2, 25);
+    scene.add(lavaLight);
+
+    // 3. Muebles / Plataformas de la Habitación
+    const platforms = [];
+    function createBox(x, y, z, w, h, d, color) {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mat = new THREE.MeshLambertMaterial({ color: color });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      platforms.push({ mesh, w, h, d });
+      return mesh;
+    }
+
+    // Suelo de la habitación (donde inicia la lava)
+    createBox(0, -0.5, 0, 30, 1, 30, 0x3e2723);
+
+    // Muebles: Mesa, Sillas, Libros, Armario
+    createBox(-4, 1.5, 0, 4, 3, 3, 0x8d6e63);       // Mesa baja
+    createBox(-1, 2.5, 2, 2, 0.8, 2, 0xd7ccc8);     // Cojín flotante 1
+    createBox(2, 3.5, 0, 3, 5, 2.5, 0x6d4c41);      // Estantería
+    createBox(1, 5.0, -3, 2, 0.6, 2, 0xffb74d);     // Pila de libros
+    createBox(-3, 6.5, -4, 4, 7, 3, 0x4e342e);      // Armario Alto
+
+    // Meta final (Cubo Verde de ventilación en lo alto del armario)
+    const goalGeo = new THREE.BoxGeometry(1.5, 0.5, 1.5);
+    const goalMat = new THREE.MeshBasicMaterial({ color: 0x00e676 });
+    const goal = new THREE.Mesh(goalGeo, goalMat);
+    goal.position.set(-3, 10.3, -4);
+    scene.add(goal);
+
+    // 4. Plano de Lava
+    const lavaGeo = new THREE.PlaneGeometry(50, 50);
+    const lavaMat = new THREE.MeshLambertMaterial({ color: 0xff3d00, emissive: 0xff1700, emissiveIntensity: 0.6 });
+    const lava = new THREE.Mesh(lavaGeo, lavaMat);
+    lava.rotation.x = -Math.PI / 2;
+    lava.position.y = 0;
+    scene.add(lava);
+
+    // 5. Jugador (Chipi)
+    const playerGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.9, 12);
+    const playerMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
+    const player = new THREE.Mesh(playerGeo, playerMat);
+    player.position.set(-4, 3.5, 0); // Inicia sobre la mesa
+    player.castShadow = true;
+    scene.add(player);
+
+    let lives = 3;
+    let gameOver = false;
+    let velocityY = 0;
+    let isGrounded = false;
+    const speed = 7.0;
+    const jumpPower = 9.0;
+    const gravity = 22.0;
+    const keys = {};
+
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    // Bucle de Juego
+    let lastTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+
+      if (gameOver) return;
+
+      // Subida de Lava
+      lava.position.y += 0.35 * dt;
+      lavaLight.position.set(player.position.x, lava.position.y + 1, player.position.z);
+      document.getElementById('lavaHeight').innerText = lava.position.y.toFixed(1) + 'm';
+
+      // Movimiento Horizontal
+      let moveX = 0, moveZ = 0;
+      if (keys['KeyW']) moveZ -= 1;
+      if (keys['KeyS']) moveZ += 1;
+      if (keys['KeyA']) moveX -= 1;
+      if (keys['KeyD']) moveX += 1;
+
+      if (moveX !== 0 || moveZ !== 0) {
+        const len = Math.hypot(moveX, moveZ);
+        player.position.x += (moveX / len) * speed * dt;
+        player.position.z += (moveZ / len) * speed * dt;
+      }
+
+      // Salto y Gravedad
+      if (keys['Space'] && isGrounded) {
+        velocityY = jumpPower;
+        isGrounded = false;
+      }
+
+      velocityY -= gravity * dt;
+      player.position.y += velocityY * dt;
+
+      // Colisiones simples con plataformas
+      isGrounded = false;
+      for (const p of platforms) {
+        const minX = p.mesh.position.x - p.w / 2 - 0.3;
+        const maxX = p.mesh.position.x + p.w / 2 + 0.3;
+        const minZ = p.mesh.position.z - p.d / 2 - 0.3;
+        const maxZ = p.mesh.position.z + p.d / 2 + 0.3;
+        const topY = p.mesh.position.y + p.h / 2;
+
+        if (player.position.x >= minX && player.position.x <= maxX &&
+            player.position.z >= minZ && player.position.z <= maxZ) {
+          if (player.position.y - 0.45 <= topY && player.position.y >= topY - 0.5 && velocityY <= 0) {
+            player.position.y = topY + 0.45;
+            velocityY = 0;
+            isGrounded = true;
+          }
+        }
+      }
+
+      // Caída a la Lava
+      if (player.position.y <= lava.position.y + 0.4) {
+        lives--;
+        document.getElementById('hearts').innerText = '❤️'.repeat(Math.max(0, lives)) + '🖤'.repeat(3 - Math.max(0, lives));
+        if (lives <= 0) {
+          gameOver = true;
+          document.getElementById('msgText').innerHTML = '💀 ¡GAME OVER!<br><span style="font-size:18px">La lava te ha alcanzado.</span>';
+          document.getElementById('msg').style.display = 'block';
+        } else {
+          // Reaparecer sobre la mesa alta
+          player.position.set(-4, 3.5, 0);
+          velocityY = 0;
+        }
+      }
+
+      // Llegar a la meta (cubo verde)
+      if (player.position.distanceTo(goal.position) < 1.5) {
+        gameOver = true;
+        document.getElementById('msgText').innerHTML = '🏆 ¡ESCAPE EXITOSO!<br><span style="font-size:18px">¡Has alcanzado la ventilación a tiempo!</span>';
+        document.getElementById('msg').style.display = 'block';
+      }
+
+      // Cámara en 3ª persona siguiendo al jugador
+      camera.position.x = player.position.x;
+      camera.position.y = player.position.y + 5;
+      camera.position.z = player.position.z + 8;
+      camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
+
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
